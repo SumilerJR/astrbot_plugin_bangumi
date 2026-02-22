@@ -13,7 +13,6 @@ from astrbot.api.star import Context, Star, register
 
 BGM_CALENDAR_API = "https://api.bgm.tv/calendar"
 REQUEST_TIMEOUT_SECONDS = 10
-MESSAGE_CHUNK_LIMIT = 3000
 USER_AGENT = "AstrBot-Bangumi-Plugin/0.1.0 (+https://github.com/SumilerJR/astrbot_plugin_bangumi)"
 
 
@@ -135,6 +134,17 @@ class BangumiPlugin(Star):
 
         return f"{score} ({total} 人评分)"
 
+    @staticmethod
+    def _get_rating_total(item: dict[str, Any]) -> int:
+        rating = item.get("rating")
+        if not isinstance(rating, dict):
+            return 0
+        total = rating.get("total")
+        try:
+            return int(total)
+        except (TypeError, ValueError):
+            return 0
+
     def _render_day_text(self, day: dict[str, Any]) -> list[str]:
         weekday = day.get("weekday", {})
         weekday_text = ""
@@ -152,47 +162,26 @@ class BangumiPlugin(Star):
             f"今日番剧推荐 ({date_text} {weekday_text})".strip(),
             f"共 {len(items)} 部",
         ]
-        for index, item in enumerate(items, start=1):
+        sorted_items = sorted(
+            [item for item in items if isinstance(item, dict)],
+            key=self._get_rating_total,
+            reverse=True,
+        )
+
+        for index, item in enumerate(sorted_items, start=1):
             if not isinstance(item, dict):
                 continue
 
             title = str(item.get("name_cn") or item.get("name") or "未命名条目").strip()
             url = str(item.get("url") or "无链接").strip()
             rating_text = self._format_rating(item)
+            rating_total = self._get_rating_total(item)
 
-            lines.append(f"{index}. {title}\n评分: {rating_text}\n链接: {url}")
+            lines.append(
+                f"{index}. {title}\n评分: {rating_text}\n评分人数: {rating_total}\n链接: {url}"
+            )
 
         return lines
-
-    @staticmethod
-    def _chunk_lines(lines: list[str], max_chars: int = MESSAGE_CHUNK_LIMIT) -> list[str]:
-        chunks: list[str] = []
-        current_parts: list[str] = []
-        current_len = 0
-
-        for line in lines:
-            line_text = str(line)
-            line_len = len(line_text)
-            separator = "\n\n" if current_parts else ""
-            additional_len = len(separator) + line_len
-
-            if current_parts and current_len + additional_len > max_chars:
-                chunks.append("".join(current_parts))
-                current_parts = [line_text]
-                current_len = line_len
-                continue
-
-            if separator:
-                current_parts.append(separator)
-                current_len += len(separator)
-
-            current_parts.append(line_text)
-            current_len += line_len
-
-        if current_parts:
-            chunks.append("".join(current_parts))
-
-        return chunks
 
     @filter.command("今日番剧")
     async def bangumi_today(self, event: AstrMessageEvent):
@@ -220,8 +209,15 @@ class BangumiPlugin(Star):
             )
 
             lines = self._render_day_text(day)
-            for message in self._chunk_lines(lines):
-                yield event.plain_result(message)
+            plain_text = "\n\n".join(lines)
+            try:
+                image_url = await self.text_to_image(plain_text)
+                yield event.image_result(image_url)
+            except Exception as exc:
+                logger.error(
+                    f"[Bangumi] text_to_image failed, fallback to plain text: {exc}"
+                )
+                yield event.plain_result(plain_text)
         except asyncio.TimeoutError:
             logger.error("[Bangumi] Request timeout while calling calendar API.")
             yield event.plain_result("获取今日番剧失败：请求 Bangumi 超时，请稍后重试。")
