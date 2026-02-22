@@ -1,14 +1,19 @@
-# astrbot-plugin-helloworld
+# astrbot_plugin_bangumi
 
-AstrBot 插件模板 / A template plugin for AstrBot plugin feature
+AstrBot 的 Bangumi 插件，当前提供每日番剧推荐功能。
 
-> [!NOTE]
-> This repo is just a template of [AstrBot](https://github.com/AstrBotDevs/AstrBot) Plugin.
-> 
-> [AstrBot](https://github.com/AstrBotDevs/AstrBot) is an agentic assistant for both personal and group conversations. It can be deployed across dozens of mainstream instant messaging platforms, including QQ, Telegram, Feishu, DingTalk, Slack, LINE, Discord, Matrix, etc. In addition, it provides a reliable and extensible conversational AI infrastructure for individuals, developers, and teams. Whether you need a personal AI companion, an intelligent customer support agent, an automation assistant, or an enterprise knowledge base, AstrBot enables you to quickly build AI applications directly within your existing messaging workflows.
+## 功能
 
-# Supports
+- 调用 Bangumi 日历接口：`https://api.bgm.tv/calendar`
+- 按北京时间（`Asia/Shanghai`）匹配“今日”
+- 返回当日番剧全量列表（含标题、评分、链接）
 
-- [AstrBot Repo](https://github.com/AstrBotDevs/AstrBot)
-- [AstrBot Plugin Development Docs (Chinese)](https://docs.astrbot.app/dev/star/plugin-new.html)
-- [AstrBot Plugin Development Docs (English)](https://docs.astrbot.app/en/dev/star/plugin-new.html)
+## 指令
+
+- `/今日番剧`：获取今日番剧推荐（全量）。
+
+## 说明
+
+- 请求 Bangumi API 时会携带 `User-Agent`。
+- 如果接口返回中没有匹配到“今天”的日期，会回退到首个日历条目。
+- 当消息过长时会自动分片发送，避免单条消息超长。
