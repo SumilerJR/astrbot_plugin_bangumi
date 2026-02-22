@@ -1,6 +1,6 @@
 name: astrbot_plugin_bangumi
 display_name: Bangumi Daily
 desc: 每日番剧推荐（Bangumi Calendar）
-version: v0.1.0
+version: 0.1.0
 author: Sumiler
 repo: https://github.com/SumilerJR/astrbot_plugin_bangumi

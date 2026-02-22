@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -14,6 +15,7 @@ from astrbot.api.star import Context, Star, register
 BGM_CALENDAR_API = "https://api.bgm.tv/calendar"
 REQUEST_TIMEOUT_SECONDS = 10
 USER_AGENT = "AstrBot-Bangumi-Plugin/0.1.0 (+https://github.com/SumilerJR/astrbot_plugin_bangumi)"
+TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "bangumi_day_template.html"
 
 
 @register(
@@ -26,6 +28,15 @@ USER_AGENT = "AstrBot-Bangumi-Plugin/0.1.0 (+https://github.com/SumilerJR/astrbo
 class BangumiPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
+        self._day_template = self._load_day_template()
+
+    @staticmethod
+    def _load_day_template() -> str:
+        try:
+            return TEMPLATE_PATH.read_text(encoding="utf-8")
+        except OSError as exc:
+            logger.error(f"[Bangumi] Failed to load template file {TEMPLATE_PATH}: {exc}")
+            return ""
 
     async def _fetch_calendar(self) -> list[dict[str, Any]]:
         timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)
@@ -60,7 +71,6 @@ class BangumiPlugin(Star):
 
         now_cn = datetime.now(ZoneInfo("Asia/Shanghai"))
         today_date = now_cn.date().isoformat()
-        # Python isoweekday: Monday=1 ... Sunday=7
         today_weekday_id = now_cn.isoweekday()
         weekday_cn_map = {
             1: "星期一",
@@ -83,7 +93,6 @@ class BangumiPlugin(Star):
         today_weekday_cn = weekday_cn_map[today_weekday_id]
         today_weekday_en = weekday_en_map[today_weekday_id]
 
-        # Prefer matching by weekday because Bangumi calendar is grouped by weekday.
         for day in calendar:
             weekday = day.get("weekday", {})
             if not isinstance(weekday, dict):
@@ -105,7 +114,6 @@ class BangumiPlugin(Star):
             if weekday_en in {today_weekday_en, today_weekday_en[:3]}:
                 return day
 
-        # Secondary fallback: match by date if API happens to include date.
         for day in calendar:
             if str(day.get("date", "")).strip() == today_date:
                 return day
@@ -145,7 +153,61 @@ class BangumiPlugin(Star):
         except (TypeError, ValueError):
             return 0
 
-    def _render_day_text(self, day: dict[str, Any]) -> list[str]:
+    @staticmethod
+    def _normalize_url(url: str) -> str:
+        val = str(url or "").strip()
+        if not val:
+            return ""
+        if val.startswith("//"):
+            return f"https:{val}"
+        return val
+
+    def _get_cover_url(self, item: dict[str, Any]) -> str:
+        images = item.get("images")
+        if not isinstance(images, dict):
+            return ""
+
+        for key in ("common", "large", "medium", "small", "grid"):
+            cover = images.get(key)
+            if cover:
+                normalized = self._normalize_url(str(cover))
+                if normalized:
+                    return normalized
+        return ""
+
+    @staticmethod
+    def _safe_summary(item: dict[str, Any], limit: int = 100) -> str:
+        summary = str(item.get("summary") or "").strip().replace("\n", " ")
+        if not summary:
+            return ""
+        if len(summary) <= limit:
+            return summary
+        return summary[:limit].rstrip() + "..."
+
+    def _build_render_items(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        sorted_items = sorted(
+            [item for item in items if isinstance(item, dict)],
+            key=self._get_rating_total,
+            reverse=True,
+        )
+
+        results: list[dict[str, Any]] = []
+        for index, item in enumerate(sorted_items, start=1):
+            title = str(item.get("name_cn") or item.get("name") or "未命名条目").strip()
+            results.append(
+                {
+                    "rank": index,
+                    "title": title,
+                    "url": self._normalize_url(str(item.get("url") or "无链接")),
+                    "rating_text": self._format_rating(item),
+                    "rating_total": self._get_rating_total(item),
+                    "cover": self._get_cover_url(item),
+                    "summary": self._safe_summary(item),
+                }
+            )
+        return results
+
+    def _get_day_display_info(self, day: dict[str, Any]) -> tuple[str, str]:
         weekday = day.get("weekday", {})
         weekday_text = ""
         if isinstance(weekday, dict):
@@ -154,34 +216,44 @@ class BangumiPlugin(Star):
         date_text = str(day.get("date", "")).strip()
         if not date_text:
             date_text = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
-        items = day.get("items", [])
-        if not isinstance(items, list):
-            raise RuntimeError("Bangumi 接口返回数据结构异常")
 
+        return date_text, weekday_text
+
+    def _render_day_text(
+        self, date_text: str, weekday_text: str, render_items: list[dict[str, Any]]
+    ) -> str:
         lines = [
             f"今日番剧推荐 ({date_text} {weekday_text})".strip(),
-            f"共 {len(items)} 部",
+            f"共 {len(render_items)} 部",
         ]
-        sorted_items = sorted(
-            [item for item in items if isinstance(item, dict)],
-            key=self._get_rating_total,
-            reverse=True,
-        )
-
-        for index, item in enumerate(sorted_items, start=1):
-            if not isinstance(item, dict):
-                continue
-
-            title = str(item.get("name_cn") or item.get("name") or "未命名条目").strip()
-            url = str(item.get("url") or "无链接").strip()
-            rating_text = self._format_rating(item)
-            rating_total = self._get_rating_total(item)
-
+        for item in render_items:
             lines.append(
-                f"{index}. {title}\n评分: {rating_text}\n评分人数: {rating_total}\n链接: {url}"
+                (
+                    f"{item['rank']}. {item['title']}\n"
+                    f"评分: {item['rating_text']}\n"
+                    f"评分人数: {item['rating_total']}\n"
+                    f"链接: {item['url']}"
+                )
             )
+        return "\n\n".join(lines)
 
-        return lines
+    async def _render_day_image(
+        self, date_text: str, weekday_text: str, render_items: list[dict[str, Any]]
+    ) -> str:
+        if not self._day_template:
+            raise RuntimeError("Bangumi HTML template is not loaded")
+
+        return await self.html_render(
+            self._day_template,
+            {
+                "date_text": date_text,
+                "weekday_text": weekday_text,
+                "count": len(render_items),
+                "items": render_items,
+            },
+            return_url=True,
+            options={"full_page": True, "type": "jpeg", "quality": 85},
+        )
 
     @filter.command("今日番剧")
     async def bangumi_today(self, event: AstrMessageEvent):
@@ -200,22 +272,25 @@ class BangumiPlugin(Star):
                 yield event.plain_result("获取今日番剧失败：返回数据结构异常。")
                 return
 
-            if not items:
+            render_items = self._build_render_items(items)
+            if not render_items:
                 yield event.plain_result("今日暂无番剧数据。")
                 return
 
+            date_text, weekday_text = self._get_day_display_info(day)
             logger.info(
-                f"[Bangumi] Calendar fetched successfully, date={day.get('date', 'unknown')}, count={len(items)}"
+                f"[Bangumi] Calendar fetched successfully, date={date_text}, weekday={weekday_text}, count={len(render_items)}"
             )
 
-            lines = self._render_day_text(day)
-            plain_text = "\n\n".join(lines)
+            plain_text = self._render_day_text(date_text, weekday_text, render_items)
             try:
-                image_url = await self.text_to_image(plain_text)
+                image_url = await self._render_day_image(
+                    date_text, weekday_text, render_items
+                )
                 yield event.image_result(image_url)
             except Exception as exc:
                 logger.error(
-                    f"[Bangumi] text_to_image failed, fallback to plain text: {exc}"
+                    f"[Bangumi] html_render failed, fallback to plain text: {exc}"
                 )
                 yield event.plain_result(plain_text)
         except asyncio.TimeoutError:
