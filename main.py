@@ -59,14 +59,63 @@ class BangumiPlugin(Star):
         if not calendar:
             return None
 
-        today_cn = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+        now_cn = datetime.now(ZoneInfo("Asia/Shanghai"))
+        today_date = now_cn.date().isoformat()
+        # Python isoweekday: Monday=1 ... Sunday=7
+        today_weekday_id = now_cn.isoweekday()
+        weekday_cn_map = {
+            1: "星期一",
+            2: "星期二",
+            3: "星期三",
+            4: "星期四",
+            5: "星期五",
+            6: "星期六",
+            7: "星期日",
+        }
+        weekday_en_map = {
+            1: "monday",
+            2: "tuesday",
+            3: "wednesday",
+            4: "thursday",
+            5: "friday",
+            6: "saturday",
+            7: "sunday",
+        }
+        today_weekday_cn = weekday_cn_map[today_weekday_id]
+        today_weekday_en = weekday_en_map[today_weekday_id]
+
+        # Prefer matching by weekday because Bangumi calendar is grouped by weekday.
         for day in calendar:
-            if str(day.get("date", "")).strip() == today_cn:
+            weekday = day.get("weekday", {})
+            if not isinstance(weekday, dict):
+                continue
+
+            raw_weekday_id = weekday.get("id")
+            weekday_cn = str(weekday.get("cn", "")).strip()
+            weekday_en = str(weekday.get("en", "")).strip().lower()
+
+            try:
+                if raw_weekday_id is not None and int(raw_weekday_id) == today_weekday_id:
+                    return day
+            except (TypeError, ValueError):
+                pass
+
+            if weekday_cn == today_weekday_cn:
+                return day
+
+            if weekday_en in {today_weekday_en, today_weekday_en[:3]}:
+                return day
+
+        # Secondary fallback: match by date if API happens to include date.
+        for day in calendar:
+            if str(day.get("date", "")).strip() == today_date:
                 return day
 
         fallback = calendar[0]
         logger.warning(
-            f"[Bangumi] No calendar entry matched date={today_cn}, fallback to date={fallback.get('date', 'unknown')}"
+            "[Bangumi] No calendar entry matched today "
+            f"(date={today_date}, weekday={today_weekday_cn}/{today_weekday_en}), "
+            f"fallback to date={fallback.get('date', 'unknown')}"
         )
         return fallback
 
@@ -92,7 +141,9 @@ class BangumiPlugin(Star):
         if isinstance(weekday, dict):
             weekday_text = str(weekday.get("cn") or weekday.get("en") or "").strip()
 
-        date_text = str(day.get("date", "unknown")).strip() or "unknown"
+        date_text = str(day.get("date", "")).strip()
+        if not date_text:
+            date_text = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
         items = day.get("items", [])
         if not isinstance(items, list):
             raise RuntimeError("Bangumi 接口返回数据结构异常")
