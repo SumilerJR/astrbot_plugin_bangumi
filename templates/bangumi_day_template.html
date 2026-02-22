@@ -6,16 +6,19 @@
     <title>今日番剧推荐</title>
     <style>
       :root {
-        --page-bg: #f5f6f8;
+        --page-bg: #f3f5f7;
         --card-bg: #ffffff;
-        --card-border: #e4e6eb;
-        --text-main: #1f2937;
+        --card-border: #e5e7eb;
+        --text-main: #111827;
         --text-sub: #6b7280;
-        --text-link: #6b7280;
+        --text-link: #9ca3af;
         --score: #0b84a5;
-        --tag-bg: #ffecef;
-        --tag-text: #c24156;
-        --active-tab-bg: #d9dce3;
+        --tag-bg: #fff1f3;
+        --tag-text: #be123c;
+        --active-tab-bg: #d9dee7;
+        --active-tab-text: #111827;
+        --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.06);
+        --shadow-card-hover: 0 4px 14px rgba(15, 23, 42, 0.08);
       }
 
       * {
@@ -24,10 +27,10 @@
 
       body {
         margin: 0;
-        padding: 20px 22px 28px;
+        padding: 20px 24px 30px;
         background: var(--page-bg);
         color: var(--text-main);
-        font-family: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+        font-family: "MiSans", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
       }
 
       .board {
@@ -38,13 +41,13 @@
       .weekday-nav {
         display: flex;
         gap: 14px;
-        margin-bottom: 14px;
+        margin-bottom: 16px;
       }
 
       .weekday-tab {
         min-width: 60px;
         text-align: center;
-        font-size: 24px;
+        font-size: 23px;
         line-height: 1;
         padding: 10px 12px;
         border-radius: 12px;
@@ -53,6 +56,7 @@
 
       .weekday-tab.active {
         background: var(--active-tab-bg);
+        color: var(--active-tab-text);
         font-weight: 700;
       }
 
@@ -65,92 +69,130 @@
 
       .title {
         margin: 0;
-        font-size: 34px;
+        font-size: 52px;
+        letter-spacing: -0.5px;
         font-weight: 700;
       }
 
       .subtitle {
-        margin: 6px 0 0;
+        margin: 8px 0 0;
         color: var(--text-sub);
-        font-size: 18px;
+        font-size: 22px;
       }
 
       .count {
-        font-size: 20px;
+        font-size: 34px;
         color: var(--text-sub);
+        font-weight: 600;
       }
 
       .cards {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 14px;
+        gap: 16px;
       }
 
       .card {
         display: grid;
-        grid-template-columns: 174px 1fr;
-        min-height: 248px;
+        grid-template-columns: 176px 1fr;
+        height: 244px;
         border: 1px solid var(--card-border);
         border-radius: 16px;
         overflow: hidden;
         background: var(--card-bg);
+        box-shadow: var(--shadow-card);
+        transition: box-shadow 0.16s ease;
+      }
+
+      .card:hover {
+        box-shadow: var(--shadow-card-hover);
       }
 
       .cover-wrap {
-        width: 174px;
-        height: 248px;
-        background: #eceff4;
+        width: 176px;
+        height: 244px;
+        background: #eef1f5;
+        padding: 12px 10px;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
       }
 
       .cover {
         width: 100%;
-        height: 100%;
+        height: auto;
+        aspect-ratio: 16 / 9;
         display: block;
         object-fit: cover;
+        border-radius: 10px;
       }
 
       .cover-fallback {
         width: 100%;
-        height: 100%;
+        height: auto;
+        aspect-ratio: 16 / 9;
         display: flex;
         align-items: center;
         justify-content: center;
-        color: #9ca3af;
-        font-size: 14px;
+        color: #94a3b8;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+        border-radius: 10px;
+        background: #dde3ea;
       }
 
       .content {
-        padding: 14px 14px 10px;
+        padding: 14px 14px 12px;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
       }
 
       .name {
         margin: 0;
-        font-size: 38px;
-        line-height: 1.1;
+        font-size: 23px;
+        line-height: 1.2;
         font-weight: 700;
+        letter-spacing: 0.2px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
 
       .alias {
         margin: 4px 0 8px;
-        font-size: 20px;
+        font-size: 16px;
         color: var(--text-sub);
-        line-height: 1.2;
+        line-height: 1.28;
+        min-height: 20px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
 
       .meta-line {
         display: flex;
         flex-wrap: wrap;
-        gap: 12px;
-        margin-bottom: 10px;
+        gap: 10px;
+        margin-bottom: 8px;
         color: var(--text-sub);
-        font-size: 17px;
+        font-size: 15px;
       }
 
       .tags {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
+        gap: 7px;
         margin-bottom: 10px;
+        max-height: 56px;
+        overflow: hidden;
       }
 
       .tag {
@@ -158,21 +200,29 @@
         border-radius: 8px;
         background: var(--tag-bg);
         color: var(--tag-text);
-        font-size: 15px;
+        font-size: 13px;
         line-height: 1.2;
+        font-weight: 600;
       }
 
       .summary {
         margin: 0 0 10px;
         color: var(--text-sub);
-        font-size: 16px;
-        line-height: 1.35;
+        font-size: 14px;
+        line-height: 1.4;
+        display: -webkit-box;
+        -webkit-line-clamp: 1;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
 
       .score-row {
         display: flex;
         align-items: baseline;
-        gap: 10px;
+        gap: 8px;
+        margin-top: auto;
       }
 
       .score {
@@ -180,18 +230,23 @@
         font-weight: 700;
         font-size: 54px;
         line-height: 1;
+        letter-spacing: -1px;
+        font-variant-numeric: tabular-nums;
       }
 
       .score-sub {
         color: var(--text-sub);
-        font-size: 16px;
+        font-size: 15px;
+        line-height: 1.15;
       }
 
       .link {
         margin-top: 8px;
         color: var(--text-link);
-        font-size: 13px;
+        font-size: 12px;
+        line-height: 1.25;
         word-break: break-all;
+        font-family: "JetBrains Mono", "Cascadia Code", monospace;
       }
 
       .foot {
@@ -237,7 +292,7 @@
             {% if item.original_title and item.original_title != item.title %}
             <p class="alias">{{ item.original_title }}</p>
             {% else %}
-            <p class="alias">&nbsp;</p>
+            <p class="alias"></p>
             {% endif %}
 
             <div class="meta-line">
