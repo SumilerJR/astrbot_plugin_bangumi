@@ -14,9 +14,12 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
 BGM_CALENDAR_API = "https://api.bgm.tv/calendar"
+BGM_SEARCH_SUBJECTS_API = "https://api.bgm.tv/v0/search/subjects"
+BGM_SUBJECTS_API_BASE = "https://api.bgm.tv/v0/subjects"
 REQUEST_TIMEOUT_SECONDS = 10
 USER_AGENT = "AstrBot-Bangumi-Plugin/0.1.0 (+https://github.com/SumilerJR/astrbot_plugin_bangumi)"
 TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "bangumi_day_template.html"
+SEARCH_DEFAULT_LIMIT = 10
 
 WEEKDAY_CN_MAP = {
     1: "星期一",
@@ -47,6 +50,8 @@ WEEKDAY_TOKEN_TO_ID = {
     "天": 7,
 }
 WEEKDAY_CMD_PATTERN = re.compile(r"^[/／]?周([一二三四五六日天])新番$")
+ANIME_SEARCH_CMD_PATTERN = re.compile(r"^[/／]?番剧搜索(?:\s+(.+))?$")
+ANIME_DETAIL_CMD_PATTERN = re.compile(r"^[/／]?番剧详情(?:\s+(\d+))?$")
 
 
 @register(
@@ -129,6 +134,146 @@ class BangumiPlugin(Star):
             raise RuntimeError("Bangumi 接口返回数据结构异常")
 
         return [item for item in data if isinstance(item, dict)]
+
+    @staticmethod
+    def _extract_search_keyword(message: str, fallback: str = "") -> str:
+        matched = ANIME_SEARCH_CMD_PATTERN.match(message.strip())
+        if matched:
+            return str(matched.group(1) or "").strip()
+        return fallback.strip()
+
+    @staticmethod
+    def _extract_subject_id(message: str, fallback: str = "") -> int | None:
+        matched = ANIME_DETAIL_CMD_PATTERN.match(message.strip())
+        raw = ""
+        if matched:
+            raw = str(matched.group(1) or "").strip()
+        elif fallback:
+            raw = fallback.strip()
+
+        if not raw:
+            return None
+
+        parsed = BangumiPlugin._to_int(raw)
+        if parsed is None or parsed <= 0:
+            return None
+        return parsed
+
+    @staticmethod
+    def _parse_search_payload(data: Any) -> tuple[list[dict[str, Any]], int]:
+        if not isinstance(data, dict):
+            logger.error(
+                f"[Bangumi] Search API payload is not a dict: {type(data).__name__}"
+            )
+            raise RuntimeError("Bangumi 搜索接口返回数据结构异常")
+
+        raw_items = data.get("data")
+        if not isinstance(raw_items, list):
+            # Compatibility fallback for non-v0 style payloads.
+            raw_items = data.get("list")
+        if not isinstance(raw_items, list):
+            logger.error(
+                "[Bangumi] Search API payload missing list field 'data' or 'list'"
+            )
+            raise RuntimeError("Bangumi 搜索接口返回数据结构异常")
+
+        items = [item for item in raw_items if isinstance(item, dict)]
+        total = BangumiPlugin._to_int(data.get("total"))
+        return items, total if total is not None else len(items)
+
+    async def _search_anime_subjects(
+        self, keyword: str, *, limit: int = SEARCH_DEFAULT_LIMIT, offset: int = 0
+    ) -> tuple[list[dict[str, Any]], int]:
+        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)
+        headers = {"User-Agent": USER_AGENT}
+        params = {"limit": str(limit), "offset": str(offset)}
+        post_payload = {
+            "keyword": keyword,
+            "sort": "rank",
+            "filter": {"type": [2]},
+        }
+        get_params = {
+            "keyword": keyword,
+            "type": "2",
+            "limit": str(limit),
+            "offset": str(offset),
+        }
+
+        async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
+            try:
+                async with session.post(
+                    BGM_SEARCH_SUBJECTS_API,
+                    headers=headers,
+                    params=params,
+                    json=post_payload,
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json(content_type=None)
+                        return self._parse_search_payload(data)
+
+                    body = await response.text()
+                    logger.warning(
+                        "[Bangumi] Search API POST failed, fallback to GET, "
+                        f"status={response.status}, body={body[:300]}"
+                    )
+            except Exception as exc:
+                logger.warning(
+                    f"[Bangumi] Search API POST raised {exc!r}, fallback to GET."
+                )
+
+            async with session.get(
+                BGM_SEARCH_SUBJECTS_API,
+                headers=headers,
+                params=get_params,
+            ) as response:
+                if response.status != 200:
+                    body = await response.text()
+                    logger.error(
+                        f"[Bangumi] Search API GET failed, status={response.status}, body={body[:300]}"
+                    )
+                    raise RuntimeError("Bangumi 搜索接口返回非 200 状态码")
+
+                try:
+                    data = await response.json(content_type=None)
+                except Exception as exc:
+                    logger.error(f"[Bangumi] Search API JSON parse failed: {exc}")
+                    raise RuntimeError("Bangumi 搜索接口返回了无效 JSON") from exc
+
+        return self._parse_search_payload(data)
+
+    async def _fetch_subject_detail(self, subject_id: int) -> dict[str, Any]:
+        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)
+        headers = {"User-Agent": USER_AGENT}
+        url = f"{BGM_SUBJECTS_API_BASE}/{subject_id}"
+
+        async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
+            async with session.get(url, headers=headers) as response:
+                if response.status == 404:
+                    raise RuntimeError("未找到对应番剧，请检查 ID 是否正确。")
+                if response.status != 200:
+                    body = await response.text()
+                    logger.error(
+                        f"[Bangumi] Subject detail API failed, id={subject_id}, "
+                        f"status={response.status}, body={body[:300]}"
+                    )
+                    raise RuntimeError("Bangumi 详情接口返回非 200 状态码")
+
+                try:
+                    data = await response.json(content_type=None)
+                except Exception as exc:
+                    logger.error(
+                        f"[Bangumi] Subject detail API JSON parse failed, id={subject_id}: {exc}"
+                    )
+                    raise RuntimeError("Bangumi 详情接口返回了无效 JSON") from exc
+
+        if not isinstance(data, dict):
+            logger.error(
+                f"[Bangumi] Subject detail payload is not a dict, id={subject_id}, "
+                f"type={type(data).__name__}"
+            )
+            raise RuntimeError("Bangumi 详情接口返回数据结构异常")
+
+        return data
 
     def _extract_weekday_id(self, day: dict[str, Any]) -> int | None:
         weekday = day.get("weekday")
@@ -282,6 +427,16 @@ class BangumiPlugin(Star):
             return f"https:{val}"
         return val
 
+    def _build_subject_url(self, item: dict[str, Any]) -> str:
+        direct_url = self._normalize_url(str(item.get("url") or ""))
+        if direct_url:
+            return direct_url
+
+        subject_id = self._to_int(item.get("id"))
+        if subject_id is None:
+            return "无链接"
+        return f"https://bgm.tv/subject/{subject_id}"
+
     def _get_cover_url(self, item: dict[str, Any]) -> str:
         images = item.get("images")
         if not isinstance(images, dict):
@@ -304,23 +459,30 @@ class BangumiPlugin(Star):
             return summary
         return summary[:limit].rstrip() + "..."
 
-    def _build_render_items(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        sorted_items = sorted(
-            [item for item in items if isinstance(item, dict)],
-            key=self._get_rating_total,
-            reverse=True,
-        )
+    def _build_render_items(
+        self, items: list[dict[str, Any]], *, sort_by_rating_total: bool = True
+    ) -> list[dict[str, Any]]:
+        normalized_items = [item for item in items if isinstance(item, dict)]
+        if sort_by_rating_total:
+            source_items = sorted(
+                normalized_items,
+                key=self._get_rating_total,
+                reverse=True,
+            )
+        else:
+            source_items = normalized_items
 
         results: list[dict[str, Any]] = []
-        for index, item in enumerate(sorted_items, start=1):
+        for index, item in enumerate(source_items, start=1):
             original_title = str(item.get("name") or "").strip()
             display_title = str(item.get("name_cn") or original_title or "未命名条目").strip()
             results.append(
                 {
                     "rank": index,
+                    "subject_id": self._to_int(item.get("id")) or 0,
                     "title": display_title,
                     "original_title": original_title,
-                    "url": self._normalize_url(str(item.get("url") or "无链接")),
+                    "url": self._build_subject_url(item),
                     "rating_text": self._format_rating(item),
                     "rating_score": self._get_rating_score(item),
                     "rating_total": self._get_rating_total(item),
@@ -368,6 +530,85 @@ class BangumiPlugin(Star):
                 )
             )
         return "\n\n".join(lines)
+
+    def _render_search_text(
+        self,
+        keyword: str,
+        render_items: list[dict[str, Any]],
+        *,
+        total: int,
+    ) -> str:
+        lines = [
+            f"番剧搜索：{keyword}",
+            f"命中 {total} 条，展示前 {len(render_items)} 条",
+        ]
+        for item in render_items:
+            alias = ""
+            if item.get("original_title") and item["original_title"] != item["title"]:
+                alias = f"\n原名: {item['original_title']}"
+            detail_hint = ""
+            if item.get("subject_id"):
+                detail_hint = f"\n详情: /番剧详情 {item['subject_id']}"
+            lines.append(
+                (
+                    f"{item['rank']}. {item['title']}{alias}\n"
+                    f"ID: {item.get('subject_id', 0)}"
+                    f"{detail_hint}\n"
+                    f"评分: {item['rating_text']}\n"
+                    f"评分人数: {item['rating_total']}\n"
+                    f"链接: {item['url']}"
+                )
+            )
+        return "\n\n".join(lines)
+
+    def _render_subject_detail_text(self, detail: dict[str, Any]) -> str:
+        subject_id = self._to_int(detail.get("id")) or 0
+        title = str(detail.get("name_cn") or detail.get("name") or "未命名条目").strip()
+        original_title = str(detail.get("name") or "").strip()
+        if original_title and original_title != title:
+            title_line = f"{title} ({original_title})"
+        else:
+            title_line = title
+
+        date_text = str(detail.get("date") or "未知").strip() or "未知"
+        eps_value = self._to_int(detail.get("eps"))
+        eps_text = str(eps_value) if eps_value is not None else "未知"
+        rank_value = self._to_int(detail.get("rank"))
+        rank_text = f"#{rank_value}" if rank_value is not None and rank_value > 0 else "暂无"
+        url = self._build_subject_url(detail)
+        summary = self._safe_summary(detail, limit=280) or "暂无简介"
+        tags = self._get_tags(detail, limit=8)
+
+        collection = detail.get("collection")
+        collection_text = "暂无收藏统计"
+        if isinstance(collection, dict):
+            wish = self._to_int(collection.get("wish")) or 0
+            doing = self._to_int(collection.get("doing")) or 0
+            done = self._to_int(collection.get("collect")) or 0
+            on_hold = self._to_int(collection.get("on_hold")) or 0
+            dropped = self._to_int(collection.get("dropped")) or 0
+            collection_text = (
+                f"想看 {wish} / 在看 {doing} / 看过 {done} / 搁置 {on_hold} / 抛弃 {dropped}"
+            )
+
+        lines = [
+            f"番剧详情：{title_line}",
+            f"ID: {subject_id}",
+            f"评分: {self._format_rating(detail)}",
+            f"Rank: {rank_text}",
+            f"首播: {date_text}",
+            f"总集数: {eps_text}",
+            f"收藏: {collection_text}",
+        ]
+        if tags:
+            lines.append(f"标签: {' / '.join(tags)}")
+        lines.extend(
+            [
+                f"简介: {summary}",
+                f"链接: {url}",
+            ]
+        )
+        return "\n".join(lines)
 
     async def _render_day_image(
         self, date_text: str, weekday_text: str, render_items: list[dict[str, Any]]
@@ -426,6 +667,70 @@ class BangumiPlugin(Star):
         except Exception as exc:
             logger.error(f"[Bangumi] html_render failed, fallback to plain text: {exc}")
             yield event.plain_result(plain_text)
+
+    @filter.command("番剧搜索")
+    async def anime_search(self, event: AstrMessageEvent, keyword: str = ""):
+        """按关键词搜索番剧（限定动画类型）。"""
+        query = self._extract_search_keyword(event.get_message_str(), fallback=keyword)
+        if not query:
+            yield event.plain_result("用法：/番剧搜索 <关键词>")
+            return
+
+        try:
+            items, total = await self._search_anime_subjects(
+                query,
+                limit=SEARCH_DEFAULT_LIMIT,
+            )
+            if not items:
+                yield event.plain_result(f"未找到与「{query}」相关的番剧。")
+                return
+
+            render_items = self._build_render_items(
+                items[:SEARCH_DEFAULT_LIMIT],
+                sort_by_rating_total=False,
+            )
+            logger.info(
+                "[Bangumi] Search finished, "
+                f"keyword={query}, total={total}, shown={len(render_items)}"
+            )
+            yield event.plain_result(
+                self._render_search_text(query, render_items, total=total)
+            )
+        except asyncio.TimeoutError:
+            logger.error("[Bangumi] Request timeout while calling search API.")
+            yield event.plain_result("番剧搜索失败：请求 Bangumi 超时，请稍后重试。")
+        except aiohttp.ClientError as exc:
+            logger.error(f"[Bangumi] Network error while calling search API: {exc}")
+            yield event.plain_result("番剧搜索失败：网络异常，请稍后重试。")
+        except RuntimeError as exc:
+            yield event.plain_result(f"番剧搜索失败：{exc}")
+        except Exception as exc:
+            logger.error(f"[Bangumi] Unexpected error in anime_search: {exc}")
+            yield event.plain_result("番剧搜索失败：发生未知错误，请稍后重试。")
+
+    @filter.command("番剧详情")
+    async def anime_detail(self, event: AstrMessageEvent, subject_id: str = ""):
+        """根据 subject_id 查看具体番剧详情。"""
+        parsed_id = self._extract_subject_id(event.get_message_str(), fallback=subject_id)
+        if parsed_id is None:
+            yield event.plain_result("用法：/番剧详情 <subject_id>")
+            return
+
+        try:
+            detail = await self._fetch_subject_detail(parsed_id)
+            logger.info(f"[Bangumi] Detail fetched successfully, id={parsed_id}")
+            yield event.plain_result(self._render_subject_detail_text(detail))
+        except asyncio.TimeoutError:
+            logger.error("[Bangumi] Request timeout while calling subject detail API.")
+            yield event.plain_result("番剧详情查询失败：请求 Bangumi 超时，请稍后重试。")
+        except aiohttp.ClientError as exc:
+            logger.error(f"[Bangumi] Network error while calling subject detail API: {exc}")
+            yield event.plain_result("番剧详情查询失败：网络异常，请稍后重试。")
+        except RuntimeError as exc:
+            yield event.plain_result(f"番剧详情查询失败：{exc}")
+        except Exception as exc:
+            logger.error(f"[Bangumi] Unexpected error in anime_detail: {exc}")
+            yield event.plain_result("番剧详情查询失败：发生未知错误，请稍后重试。")
 
     @filter.command("今日新番")
     async def anime_today(self, event: AstrMessageEvent):
