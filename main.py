@@ -154,6 +154,36 @@ class BangumiPlugin(Star):
             return 0
 
     @staticmethod
+    def _get_rating_score(item: dict[str, Any]) -> str:
+        rating = item.get("rating")
+        if not isinstance(rating, dict):
+            return "0.0"
+        score = rating.get("score")
+        try:
+            return f"{float(score):.1f}"
+        except (TypeError, ValueError):
+            return "0.0"
+
+    @staticmethod
+    def _get_tags(item: dict[str, Any], limit: int = 6) -> list[str]:
+        tags = item.get("tags")
+        if not isinstance(tags, list):
+            return []
+
+        result: list[str] = []
+        for tag in tags:
+            if isinstance(tag, dict):
+                name = str(tag.get("name") or "").strip()
+            else:
+                name = str(tag).strip()
+            if not name:
+                continue
+            result.append(name)
+            if len(result) >= limit:
+                break
+        return result
+
+    @staticmethod
     def _normalize_url(url: str) -> str:
         val = str(url or "").strip()
         if not val:
@@ -193,15 +223,19 @@ class BangumiPlugin(Star):
 
         results: list[dict[str, Any]] = []
         for index, item in enumerate(sorted_items, start=1):
-            title = str(item.get("name_cn") or item.get("name") or "未命名条目").strip()
+            original_title = str(item.get("name") or "").strip()
+            display_title = str(item.get("name_cn") or original_title or "未命名条目").strip()
             results.append(
                 {
                     "rank": index,
-                    "title": title,
+                    "title": display_title,
+                    "original_title": original_title,
                     "url": self._normalize_url(str(item.get("url") or "无链接")),
                     "rating_text": self._format_rating(item),
+                    "rating_score": self._get_rating_score(item),
                     "rating_total": self._get_rating_total(item),
                     "cover": self._get_cover_url(item),
+                    "tags": self._get_tags(item),
                     "summary": self._safe_summary(item),
                 }
             )

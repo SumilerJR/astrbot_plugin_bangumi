@@ -3,20 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bangumi Daily</title>
+    <title>今日番剧推荐</title>
     <style>
       :root {
-        --bg-top: #0f172a;
-        --bg-bottom: #111827;
-        --panel: rgba(15, 23, 42, 0.82);
-        --panel-border: rgba(148, 163, 184, 0.28);
-        --card-bg: rgba(30, 41, 59, 0.72);
-        --card-border: rgba(148, 163, 184, 0.25);
-        --text-main: #f8fafc;
-        --text-muted: #cbd5e1;
-        --chip-bg: rgba(30, 64, 175, 0.34);
-        --chip-border: rgba(147, 197, 253, 0.4);
-        --accent: #7dd3fc;
+        --page-bg: #f5f6f8;
+        --card-bg: #ffffff;
+        --card-border: #e4e6eb;
+        --text-main: #1f2937;
+        --text-sub: #6b7280;
+        --text-link: #6b7280;
+        --score: #0b84a5;
+        --tag-bg: #ffecef;
+        --tag-text: #c24156;
+        --active-tab-bg: #d9dce3;
       }
 
       * {
@@ -25,179 +24,201 @@
 
       body {
         margin: 0;
-        padding: 44px;
+        padding: 20px 22px 28px;
+        background: var(--page-bg);
         color: var(--text-main);
-        background:
-          radial-gradient(circle at 14% 18%, rgba(56, 189, 248, 0.22), transparent 32%),
-          radial-gradient(circle at 84% 2%, rgba(34, 197, 94, 0.14), transparent 28%),
-          linear-gradient(160deg, var(--bg-top), var(--bg-bottom));
-        font-family: "Noto Serif SC", "Source Han Serif SC", "LXGW WenKai", "PingFang SC", serif;
+        font-family: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
       }
 
       .board {
-        width: 1060px;
+        max-width: 1960px;
         margin: 0 auto;
-        border-radius: 28px;
-        border: 1px solid var(--panel-border);
-        background: var(--panel);
-        box-shadow: 0 26px 70px rgba(2, 6, 23, 0.55);
-        overflow: hidden;
       }
 
-      .hero {
-        padding: 30px 34px 24px;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.22);
-        background: linear-gradient(180deg, rgba(15, 23, 42, 0.72), rgba(15, 23, 42, 0.36));
-      }
-
-      .hero-top {
+      .weekday-nav {
         display: flex;
-        align-items: baseline;
+        gap: 14px;
+        margin-bottom: 14px;
+      }
+
+      .weekday-tab {
+        min-width: 60px;
+        text-align: center;
+        font-size: 24px;
+        line-height: 1;
+        padding: 10px 12px;
+        border-radius: 12px;
+        color: #374151;
+      }
+
+      .weekday-tab.active {
+        background: var(--active-tab-bg);
+        font-weight: 700;
+      }
+
+      .header {
+        display: flex;
         justify-content: space-between;
-        gap: 20px;
+        align-items: baseline;
+        margin-bottom: 12px;
       }
 
       .title {
         margin: 0;
-        font-size: 44px;
-        line-height: 1.1;
-        letter-spacing: 0.5px;
-        text-shadow: 0 4px 18px rgba(56, 189, 248, 0.2);
+        font-size: 34px;
+        font-weight: 700;
       }
 
       .subtitle {
-        margin: 12px 0 0;
-        font-size: 19px;
-        color: var(--text-muted);
+        margin: 6px 0 0;
+        color: var(--text-sub);
+        font-size: 18px;
       }
 
-      .count-badge {
-        padding: 9px 16px;
-        border-radius: 999px;
-        border: 1px solid var(--chip-border);
-        background: var(--chip-bg);
-        font-size: 15px;
-        font-weight: 700;
-        white-space: nowrap;
+      .count {
+        font-size: 20px;
+        color: var(--text-sub);
       }
 
       .cards {
-        padding: 24px 24px 30px;
         display: grid;
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 14px;
       }
 
       .card {
         display: grid;
-        grid-template-columns: 124px 1fr;
-        gap: 16px;
-        align-items: stretch;
-        border-radius: 18px;
+        grid-template-columns: 174px 1fr;
+        min-height: 248px;
         border: 1px solid var(--card-border);
-        background: var(--card-bg);
-        backdrop-filter: blur(2px);
+        border-radius: 16px;
         overflow: hidden;
+        background: var(--card-bg);
       }
 
       .cover-wrap {
-        width: 124px;
-        min-height: 176px;
-        background: linear-gradient(135deg, rgba(30, 64, 175, 0.36), rgba(30, 41, 59, 0.94));
+        width: 174px;
+        height: 248px;
+        background: #eceff4;
       }
 
       .cover {
-        width: 124px;
-        height: 176px;
-        object-fit: cover;
+        width: 100%;
+        height: 100%;
         display: block;
+        object-fit: cover;
       }
 
       .cover-fallback {
-        width: 124px;
-        height: 176px;
+        width: 100%;
+        height: 100%;
         display: flex;
         align-items: center;
         justify-content: center;
-        color: rgba(241, 245, 249, 0.86);
-        font-size: 12px;
-        letter-spacing: 1px;
+        color: #9ca3af;
+        font-size: 14px;
       }
 
       .content {
-        padding: 14px 14px 12px 0;
+        padding: 14px 14px 10px;
       }
 
-      .topline {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
-      .rank {
-        min-width: 38px;
-        text-align: center;
-        padding: 4px 8px;
-        border-radius: 999px;
-        font-size: 13px;
-        font-weight: 700;
-        border: 1px solid rgba(125, 211, 252, 0.42);
-        background: rgba(14, 116, 144, 0.35);
-        color: #e0f2fe;
-      }
-
-      .anime-title {
+      .name {
         margin: 0;
-        font-size: 23px;
-        line-height: 1.28;
+        font-size: 38px;
+        line-height: 1.1;
+        font-weight: 700;
       }
 
-      .meta {
-        margin-top: 10px;
+      .alias {
+        margin: 4px 0 8px;
+        font-size: 20px;
+        color: var(--text-sub);
+        line-height: 1.2;
+      }
+
+      .meta-line {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 10px;
+        color: var(--text-sub);
+        font-size: 17px;
+      }
+
+      .tags {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
+        margin-bottom: 10px;
       }
 
-      .chip {
-        padding: 4px 9px;
-        border-radius: 999px;
-        border: 1px solid var(--chip-border);
-        background: rgba(15, 23, 42, 0.62);
-        color: #e2e8f0;
-        font-size: 13px;
+      .tag {
+        padding: 3px 9px;
+        border-radius: 8px;
+        background: var(--tag-bg);
+        color: var(--tag-text);
+        font-size: 15px;
+        line-height: 1.2;
       }
 
       .summary {
-        margin: 10px 0 0;
-        color: var(--text-muted);
-        font-size: 14px;
-        line-height: 1.45;
+        margin: 0 0 10px;
+        color: var(--text-sub);
+        font-size: 16px;
+        line-height: 1.35;
+      }
+
+      .score-row {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+      }
+
+      .score {
+        color: var(--score);
+        font-weight: 700;
+        font-size: 54px;
+        line-height: 1;
+      }
+
+      .score-sub {
+        color: var(--text-sub);
+        font-size: 16px;
       }
 
       .link {
-        margin: 10px 0 0;
-        font-size: 12px;
-        color: var(--accent);
+        margin-top: 8px;
+        color: var(--text-link);
+        font-size: 13px;
         word-break: break-all;
-        font-family: "JetBrains Mono", "Cascadia Code", monospace;
       }
 
       .foot {
-        padding: 0 24px 20px;
-        color: rgba(203, 213, 225, 0.76);
-        font-size: 12px;
+        margin-top: 14px;
+        color: var(--text-sub);
+        font-size: 14px;
       }
     </style>
   </head>
   <body>
     <section class="board">
-      <header class="hero">
-        <div class="hero-top">
+      <nav class="weekday-nav">
+        <span class="weekday-tab {% if weekday_text == '星期一' %}active{% endif %}">周一</span>
+        <span class="weekday-tab {% if weekday_text == '星期二' %}active{% endif %}">周二</span>
+        <span class="weekday-tab {% if weekday_text == '星期三' %}active{% endif %}">周三</span>
+        <span class="weekday-tab {% if weekday_text == '星期四' %}active{% endif %}">周四</span>
+        <span class="weekday-tab {% if weekday_text == '星期五' %}active{% endif %}">周五</span>
+        <span class="weekday-tab {% if weekday_text == '星期六' %}active{% endif %}">周六</span>
+        <span class="weekday-tab {% if weekday_text == '星期日' %}active{% endif %}">周日</span>
+      </nav>
+
+      <header class="header">
+        <div>
           <h1 class="title">今日番剧推荐</h1>
-          <div class="count-badge">共 {{ count }} 部</div>
+          <p class="subtitle">{{ date_text }} {{ weekday_text }} · 按评分人数排序</p>
         </div>
-        <p class="subtitle">{{ date_text }} {{ weekday_text }} · 按评分人数排序（降序）</p>
+        <div class="count">共 {{ count }} 部</div>
       </header>
 
       <main class="cards">
@@ -212,19 +233,34 @@
           </div>
 
           <div class="content">
-            <div class="topline">
-              <span class="rank">#{{ item.rank }}</span>
-              <h2 class="anime-title">{{ item.title }}</h2>
+            <h2 class="name">{{ item.title }}</h2>
+            {% if item.original_title and item.original_title != item.title %}
+            <p class="alias">{{ item.original_title }}</p>
+            {% else %}
+            <p class="alias">&nbsp;</p>
+            {% endif %}
+
+            <div class="meta-line">
+              <span>#{{ item.rank }}</span>
+              <span>{{ item.rating_total }} 人评分</span>
             </div>
 
-            <div class="meta">
-              <span class="chip">评分 {{ item.rating_text }}</span>
-              <span class="chip">评分人数 {{ item.rating_total }}</span>
+            {% if item.tags %}
+            <div class="tags">
+              {% for tag in item.tags %}
+              <span class="tag">{{ tag }}</span>
+              {% endfor %}
             </div>
+            {% endif %}
 
             {% if item.summary %}
             <p class="summary">{{ item.summary }}</p>
             {% endif %}
+
+            <div class="score-row">
+              <span class="score">{{ item.rating_score }}</span>
+              <span class="score-sub">{{ item.rating_text }}</span>
+            </div>
 
             <p class="link">{{ item.url }}</p>
           </div>
